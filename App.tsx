@@ -1,6 +1,7 @@
-//imports//
-import React, { useState, useMemo } from 'react';// functions and memory
-import {StyleSheet,
+// imports
+import React, { useState, useMemo } from 'react';
+import {
+  StyleSheet,
   View,
   Text,
   ScrollView,
@@ -12,6 +13,7 @@ import {StyleSheet,
   Alert,
   Image,
   FlatList,
+  ImageSourcePropType,
 } from 'react-native';
 
 // type definitions
@@ -22,38 +24,38 @@ interface MenuItem {
   price: string;
   course: string;
 }
-//translator from greek to english vise versa
-type LanguageCode = 'EN' | 'GR'; 
+// translator from greek to english vise versa
+type LanguageCode = 'EN' | 'GR';
 type MenuByCourse = {
-    [course: string]: MenuItem[];
+  [course: string]: MenuItem[];
 };
 
+const LogoImage = require('./assets/icon.png');
+const AppLogo: ImageSourcePropType = { uri: LogoImage }; 
 
-const EXPO_SNACK_LOGO_URI = '../assets/splash.png';
-
-//colours for the app
-const COLORS = {
-  APP_BACKGROUND: '#122025',
-  LIST_BACKGROUND: '#09161b',
-  MODAL_INPUT_BG: '#09191B',
-  DIVIDER_BLACK: '#000000',
-  TEXT_LIGHT: '#FFFFFF',
-  TEXT_ACCENT: '#C1DBE3',
-  TEXT_GRAY: '#999999',
-  BUTTON_ACCENT: '#1A67B1',
-  COURSE_PILL_BG: '#12394E',
-  COURSE_PILL_BORDER: '#C1DBE3',
-  MODAL_OVERLAY: 'rgba(18, 32, 37, 0.9)',
-  MODAL_BACKGROUND: '#122025',
-  ITEM_IMAGE_PLACEHOLDER: '#2C475A',
-  HOME_HEADER_TITLE: '#D4E6EC',
-  ACTION_SAVE: '#38A738',
-  ACTION_DELETE: '#E74C3C',
-  ERROR_TEXT: '#E74C3C',
+// colours for the app
+const Colours = {
+  AppBackGround: '#122025',
+  ListBackGround: '#09161b',
+  FloatScreenBG: '#09191B',
+  DivisionLine: '#000000',
+  MainTextColour: '#FFFFFF',
+  HeadingText: '#C1DBE3',
+  GrayText: '#999999',
+  ButtonColour: '#1A67B1',
+  CourseScrollviewBG: '#09161B',
+  CourseSVBorder: '#12394c',
+  FloatScreen: 'rgba(18, 32, 37, 0.9)',
+  ModelBackGround: '#122025',
+  ImageHolder: '#2C475A',
+  HomeTitle: '#D4E6EC',
+  SaveBtn: '#135469',
+  DeleteBtn: '#E74C3C',
+  ErrorMsg: '#E74C3C',
 };
 
 // translated words
-const TRANSLATION_MAP = {
+const TRANSLATION_MAP: Record<LanguageCode, Record<string, string>> = {
   'EN': {
     'Orektiká': 'Appetizers',
     'Soúpa': 'Soup',
@@ -74,29 +76,34 @@ const TRANSLATION_MAP = {
 
 const translateText = (text: string, currentLang: LanguageCode): string => {
   if (currentLang === 'GR') {
-    return TRANSLATION_MAP['EN'][text] || text;
+    const originalKey = Object.keys(TRANSLATION_MAP['EN']).find(key => TRANSLATION_MAP['EN'][key] === text) || text;
+    return TRANSLATION_MAP['GR'][originalKey] || text;
   }
   if (currentLang === 'EN') {
-    return TRANSLATION_MAP['GR'][text] || text;
+    const originalKey = Object.keys(TRANSLATION_MAP['GR']).find(key => TRANSLATION_MAP['GR'][key] === text) || text;
+    return TRANSLATION_MAP['EN'][originalKey] || text;
   }
   return text;
 };
 
 const translateItem = (item: MenuItem, currentLang: LanguageCode): MenuItem => {
-  const targetMap = TRANSLATION_MAP[currentLang];
-  
-  
-  const originalCourseKey = Object.keys(TRANSLATION_MAP['EN']).find(key => 
-      TRANSLATION_MAP['EN'][key] === item.course || TRANSLATION_MAP['GR'][key] === item.course // Handles both GR/EN input
-  ) || item.course;
-  
-  // Translate the course name using the original key
-  const translatedCourse = targetMap[originalCourseKey] || item.course;
+  const targetMap = currentLang === 'EN' ? TRANSLATION_MAP['EN'] : TRANSLATION_MAP['GR'];
 
-  const translatedName = currentLang === 'GR' 
-    ? item.name.replace(' (EN)', ' (GR)') 
+  const courseKeys = Object.keys(TRANSLATION_MAP['EN']);
+  const originalCourseKey = courseKeys.find(key =>
+      TRANSLATION_MAP['EN'][key] === item.course ||
+      TRANSLATION_MAP['GR'][key] === item.course ||
+      key === item.course
+  ) || item.course;
+
+  // Translate the course name using the original key
+  const translatedCourse = targetMap[originalCourseKey as keyof typeof targetMap] || item.course;
+
+  // appended language markers "(EN)" or "(GR)" for the dish name/description.
+  const translatedName = currentLang === 'GR'
+    ? item.name.replace(' (EN)', ' (GR)')
     : item.name.replace(' (GR)', ' (EN)');
-  const translatedDescription = currentLang === 'GR' 
+  const translatedDescription = currentLang === 'GR'
     ? item.description.replace(' (EN)', ' (GR)')
     : item.description.replace(' (GR)', ' (EN)');
 
@@ -109,14 +116,14 @@ const translateItem = (item: MenuItem, currentLang: LanguageCode): MenuItem => {
 };
 
 const groupByCourse = (items: MenuItem[]): MenuByCourse => {
-    return items.reduce((acc, item) => {
-        const courseName = item.course;
-        if (!acc[courseName]) {
-            acc[courseName] = [];
-        }
-        acc[courseName].push(item);
-        return acc;
-    }, {} as MenuByCourse);
+  return items.reduce((acc, item) => {
+    const courseName = item.course;
+    if (!acc[courseName]) {
+      acc[courseName] = [];
+    }
+    acc[courseName].push(item);
+    return acc;
+  }, {} as MenuByCourse);
 };
 
 const DECOY_COURSES = [
@@ -136,19 +143,66 @@ interface AddItemModalProps {
   courses: string[];
 }
 
-const AddItemModal: React.FC<AddItemModalProps> = ({ isVisible, onClose, onSave, courses }) => {
-  const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
-  const [price, setPrice] = useState('');
-  const [course, setCourse] = useState(courses[0]);
-  const [nameError, setNameError] = useState(false);
-  const [descriptionError, setDescriptionError] = useState(false);
-  const [priceError, setPriceError] = useState(false);
+// Helper component for the course picker, as the original mock was just a TextInput
+interface CoursePickerModalProps {
+  isVisible: boolean;
+  courses: string[];
+  onSelect: (course: string) => void;
+  onClose: () => void;
+  currentCourse: string;
+}
 
+const CoursePickerModal: React.FC<CoursePickerModalProps> = ({ isVisible, courses, onSelect, onClose, currentCourse }) => (
+  <Modal
+    animationType="slide"
+    transparent={true}
+    visible={isVisible}
+    onRequestClose={onClose}
+  >
+    <View style={modalStyles.centeredView}>
+      {/* Reused modalView style for a simplified picker view */}
+      <View style={modalStyles.modalView}>
+        <Text style={modalStyles.modalTitle}>Select Course</Text>
+        <FlatList
+          data={courses}
+          keyExtractor={(item) => item}
+          renderItem={({ item }) => (
+            <TouchableOpacity
+              style={[
+                modalStyles.pickerItem,
+                item === currentCourse && modalStyles.pickerItemSelected,
+              ]}
+              onPress={() => {
+                onSelect(item);
+                onClose();
+              }}
+            >
+              <Text style={modalStyles.pickerItemText}>{item}</Text>
+            </TouchableOpacity>
+          )}
+          style={{ width: '100%' }}
+        />
+        <TouchableOpacity style={[modalStyles.buttonSave, { marginTop: 15 }]} onPress={onClose}>
+          <Text style={modalStyles.textStyle}>CLOSE</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  </Modal>
+);
+
+const AddItemModal: React.FC<AddItemModalProps> = ({ isVisible, onClose, onSave, courses }) => {
+  const [name, setName] = useState<string>('');
+  const [description, setDescription] = useState<string>('');
+  const [price, setPrice] = useState<string>('');
+  const [course, setCourse] = useState<string>(courses[0] || '');
+  const [nameError, setNameError] = useState<boolean>(false);
+  const [descriptionError, setDescriptionError] = useState<boolean>(false);
+  const [priceError, setPriceError] = useState<boolean>(false);
+  const [isCoursePickerVisible, setIsCoursePickerVisible] = useState<boolean>(false);
 
   const handlePriceChange = (text: string) => {
-    // price to only allow numbers 
-    const cleanText = text.replace(/[^0-9.]/g, ''); 
+    // price to only allow numbers
+    const cleanText = text.replace(/[^0-9.]/g, '');
     const parts = cleanText.split('.');
 
     // allows one decimal point
@@ -159,50 +213,52 @@ const AddItemModal: React.FC<AddItemModalProps> = ({ isVisible, onClose, onSave,
     }
     setPriceError(false);
   };
-  
+
   const handleSave = () => {
     let isValid = true;
 
     // error checks
     if (!name.trim()) {
-        setNameError(true);
-        isValid = false;
+      setNameError(true);
+      isValid = false;
     } else {
-        setNameError(false);
+      setNameError(false);
     }
 
     if (!description.trim()) {
-        setDescriptionError(true);
-        isValid = false;
+      setDescriptionError(true);
+      isValid = false;
     } else {
-        setDescriptionError(false);
+      setDescriptionError(false);
     }
-    
-    // Check if price is empty
-    if (!price.trim() || price === '.') {
-        setPriceError(true);
-        isValid = false;
+
+    const priceValue = parseFloat(price.trim());
+
+    // Check if price is empty or invalid
+    if (!price.trim() || price === '.' || isNaN(priceValue)) {
+      setPriceError(true);
+      isValid = false;
     } else {
-        setPriceError(false);
+      setPriceError(false);
     }
 
     if (!isValid) {
-        Alert.alert('Missing Information', 'Please fill in all needed info(Name, Description, and a valid Price) before saving.');
-        return;
+      Alert.alert('Missing Information', 'Please fill in all needed info (Name, Description, and a valid Price) before saving.');
+      return;
     }
 
     onSave({
-      name: name.trim(), 
-      description: description.trim(),
-      price: `€${parseFloat(price.trim()).toFixed(2)}`,
-      course, // using the greek course name
+      name: name.trim() + ' (EN)', // Added language tag for translation demo
+      description: description.trim() + ' (EN)', // Added language tag
+      price: `€${priceValue.toFixed(2)}`,
+      course, // using the greek course name as the accepted key
     });
-    
+
     // clear and closing float screen
     setName('');
     setDescription('');
     setPrice('');
-    setCourse(courses[0]);
+    setCourse(courses[0] || '');
     setNameError(false);
     setDescriptionError(false);
     setPriceError(false);
@@ -210,6 +266,7 @@ const AddItemModal: React.FC<AddItemModalProps> = ({ isVisible, onClose, onSave,
   };
 
   return (
+    <>
     <Modal
       animationType="fade"
       transparent={true}
@@ -217,54 +274,53 @@ const AddItemModal: React.FC<AddItemModalProps> = ({ isVisible, onClose, onSave,
       onRequestClose={onClose}
     >
       <View style={modalStyles.centeredView}>
-        <View style={modalStyles.modalView}>
+        <View style={[modalStyles.modalView, { backgroundColor: Colours.ListBackGround }]}>
           <Text style={modalStyles.modalTitle}>Add New Menu Item</Text>
 
           <TextInput
             style={[modalStyles.input, nameError && modalStyles.inputError]}
             placeholder="Item Name"
-            placeholderTextColor={COLORS.TEXT_GRAY}
+            placeholderTextColor={Colours.GrayText}
             value={name}
             onChangeText={setName}
             onBlur={() => setNameError(!name.trim())}
           />
           {nameError && <Text style={modalStyles.errorText}>Item Name needed.</Text>}
-          
+
           <TextInput
             style={[modalStyles.input, descriptionError && modalStyles.inputError, { height: 80 }]}
             placeholder="Description"
-            placeholderTextColor={COLORS.TEXT_GRAY}
+            placeholderTextColor={Colours.GrayText}
             value={description}
             onChangeText={setDescription}
             onBlur={() => setDescriptionError(!description.trim())}
             multiline
           />
           {descriptionError && <Text style={modalStyles.errorText}>Description needed.</Text>}
-          
+
           <TextInput
             style={[modalStyles.input, priceError && modalStyles.inputError]}
             placeholder="Price of dish"
-            placeholderTextColor={COLORS.TEXT_GRAY}
+            placeholderTextColor={Colours.GrayText}
             keyboardType="numeric"
             value={price}
             onChangeText={handlePriceChange}
-            onBlur={() => setPriceError(!price.trim() || price === '.')}
+            onBlur={() => setPriceError(!price.trim() || price === '.' || isNaN(parseFloat(price.trim())))}
           />
           {priceError && <Text style={modalStyles.errorText}>Valid Price needed (numbers only).</Text>}
 
           <View style={modalStyles.pickerContainer}>
-            <View style={modalStyles.pickerMock}>
-                <TextInput
-                    style={modalStyles.pickerInputMock}
-                    placeholder="Course"
-                    placeholderTextColor={COLORS.TEXT_GRAY}
-                    value={course}
-                    onChangeText={setCourse}
-                />
-                <Text style={modalStyles.dropdownIcon}>▼</Text>
-            </View>
+            <TouchableOpacity
+              style={modalStyles.pickerMock}
+              onPress={() => setIsCoursePickerVisible(true)}
+            >
+              <Text style={modalStyles.pickerInputMock}>
+                {course}
+              </Text>
+              <Text style={modalStyles.dropdownIcon}>▼</Text>
+            </TouchableOpacity>
           </View>
-          
+
           <TouchableOpacity
             style={modalStyles.buttonSave}
             onPress={handleSave}
@@ -274,14 +330,22 @@ const AddItemModal: React.FC<AddItemModalProps> = ({ isVisible, onClose, onSave,
         </View>
       </View>
     </Modal>
+    <CoursePickerModal
+        isVisible={isCoursePickerVisible}
+        courses={courses}
+        onSelect={setCourse}
+        onClose={() => setIsCoursePickerVisible(false)}
+        currentCourse={course}
+    />
+    </>
   );
 };
 
-// Home Screen 
+// Home Screen
 const HomeScreen: React.FC<{ menuItems: MenuItem[] }> = ({ menuItems }) => {
   const [currentLang, setCurrentLang] = useState<LanguageCode>('EN');
   const languages: LanguageCode[] = ['GR', 'EN'];
-  const nextLang = languages.find(lang => lang !== currentLang) || 'GR';
+  const nextLang: LanguageCode = languages.find(lang => lang !== currentLang) || 'GR';
 
   const handleTranslate = () => {
     setCurrentLang(nextLang);
@@ -292,35 +356,35 @@ const HomeScreen: React.FC<{ menuItems: MenuItem[] }> = ({ menuItems }) => {
   }, [menuItems, currentLang]);
 
   const menuByCourse = useMemo(() => {
-      return groupByCourse(translatedItems);
+    return groupByCourse(translatedItems);
   }, [translatedItems]);
 
   const courseKeys = Object.keys(menuByCourse);
 
   const RenderMenuItem: React.FC<{ item: MenuItem }> = ({ item }) => (
     <View style={homeStyles.menuItemWrapper}>
-        <View style={homeStyles.itemImagePlaceholder}>
-            <Text style={homeStyles.itemImageText}>🍝</Text>
-        </View>
-        <Text style={homeStyles.itemName}>{item.name}</Text>
-        <Text style={homeStyles.itemPrice}>{item.price}</Text>
-        <Text style={homeStyles.itemDescription} numberOfLines={2} ellipsizeMode="tail">{item.description}</Text>
+      <View style={homeStyles.itemImagePlaceholder}>
+        <Text style={homeStyles.itemImageText}>🍝</Text>
+      </View>
+      <Text style={homeStyles.itemName}>{item.name}</Text>
+      <Text style={homeStyles.itemPrice}>{item.price}</Text>
+      <Text style={homeStyles.itemDescription} numberOfLines={2} ellipsizeMode="tail">{item.description}</Text>
     </View>
   );
-  
+
   // Component to render items for a single course
   const RenderCourseSection: React.FC<{ course: string, items: MenuItem[] }> = ({ course, items }) => (
-      <View style={homeStyles.courseSectionContainer}>
-          <Text style={homeStyles.courseSectionTitle}>{course}</Text>
-          <FlatList
-              data={items}
-              renderItem={({ item }) => <RenderMenuItem item={item} />}
-              keyExtractor={(item) => item.id}
-              numColumns={2}
-              columnWrapperStyle={homeStyles.row}
-              scrollEnabled={false}
-          />
-      </View>
+    <View style={homeStyles.courseSectionContainer}>
+      <Text style={homeStyles.courseSectionTitle}>{course}</Text>
+      <FlatList
+        data={items}
+        renderItem={({ item }) => <RenderMenuItem item={item} />}
+        keyExtractor={(item) => item.id}
+        numColumns={2}
+        columnWrapperStyle={homeStyles.row}
+        scrollEnabled={false}
+      />
+    </View>
   );
 
   return (
@@ -329,14 +393,13 @@ const HomeScreen: React.FC<{ menuItems: MenuItem[] }> = ({ menuItems }) => {
         <TouchableOpacity style={homeStyles.translatorPill} onPress={handleTranslate}>
           <Text style={homeStyles.translatorPillText}>{nextLang}</Text>
         </TouchableOpacity>
-        
+
         <View style={homeStyles.appNameContainer}>
-            <Text style={homeStyles.appName}>Fengarófotis</Text>
-            <Text style={homeStyles.appSubName}>Psichés</Text>
+          <Text style={homeStyles.appName}>Fengarófotis</Text>
+          <Text style={homeStyles.appSubName}>Psichés</Text>
         </View>
-        
-        {/* Logo positioned right */}
-        <Image source={{ uri: EXPO_SNACK_LOGO_URI }} style={homeStyles.logoImage} />
+
+        <Image source={AppLogo} style={homeStyles.logoImage} />
       </View>
 
       {/*Decoy Horizontal */}
@@ -366,11 +429,12 @@ const HomeScreen: React.FC<{ menuItems: MenuItem[] }> = ({ menuItems }) => {
           <FlatList
             data={courseKeys}
             renderItem={({ item: course }) => (
-                <RenderCourseSection course={translateText(course, currentLang)} items={menuByCourse[course]} />
+              <RenderCourseSection course={course} items={menuByCourse[course]} />
             )}
             keyExtractor={(course) => course}
             showsVerticalScrollIndicator={false}
-            scrollEnabled={false} 
+            // Disabling FlatList scroll when inside a ScrollView, but enabling it for the main list in MenuManagementScreen
+            scrollEnabled={false}
           />
         )}
       </View>
@@ -381,98 +445,94 @@ const HomeScreen: React.FC<{ menuItems: MenuItem[] }> = ({ menuItems }) => {
 
 // Menu Management Screen
 interface MenuManagementScreenProps {
-    onOpenModal: () => void;
-    managedItems: MenuItem[];
-    selectedItemId: string | null;
-    onSelectItem: (id: string | null) => void;
-    onDeleteItem: (id: string) => void;
-    onClearAll: () => void;
+  onOpenModal: () => void;
+  managedItems: MenuItem[];
+  selectedItemId: string | null;
+  onSelectItem: (id: string | null) => void;
+  onDeleteItem: (id: string) => void;
+  onClearAll: () => void;
 }
 
-const MenuManagementScreen: React.FC<MenuManagementScreenProps> = ({ 
-    onOpenModal, 
-    managedItems, 
-    selectedItemId, 
-    onSelectItem, 
-    onDeleteItem,
-    onClearAll,
+const MenuManagementScreen: React.FC<MenuManagementScreenProps> = ({
+  onOpenModal,
+  managedItems,
+  selectedItemId,
+  onSelectItem,
+  onDeleteItem,
+  onClearAll,
 }) => {
-  
+
   const RenderManagedItem: React.FC<{ item: MenuItem }> = ({ item }) => {
     const isSelected = item.id === selectedItemId;
 
     return (
-        <TouchableOpacity 
-            style={[managementStyles.mockItemCard, isSelected && managementStyles.mockItemCardSelected]}
-            onPress={() => onSelectItem(isSelected ? null : item.id)}
-        >
-            {/* Dish Name and Price in a CardView style */}
-            <View style={managementStyles.itemHeaderRow}>
-                <Text style={managementStyles.itemCourseName}>{item.name.replace(' (EN)', '').replace(' (GR)', '')}</Text>
-                <Text style={managementStyles.itemPriceName}>{item.price}</Text>
-            </View>
+      <TouchableOpacity
+        style={[managementStyles.mockItemCard, isSelected && managementStyles.mockItemCardSelected]}
+        onPress={() => onSelectItem(isSelected ? null : item.id)}
+      >
+        {/* Dish Name and Price in a CardView style */}
+        <View style={managementStyles.itemHeaderRow}>
+          <Text style={managementStyles.itemCourseName}>{item.name.replace(' (EN)', '').replace(' (GR)', '')}</Text>
+          <Text style={managementStyles.itemPriceName}>{item.price}</Text>
+        </View>
 
-            <View style={managementStyles.itemContentRow}>
-                <View style={managementStyles.itemImagePlaceholder}>
-                    <Text style={managementStyles.itemImageText}>🍛</Text>
-                </View>
-                <View style={managementStyles.itemDetails}>
-                    <Text style={managementStyles.itemDescription} numberOfLines={3} ellipsizeMode="tail">
-                        {item.description.replace(' (EN)', '').replace(' (GR)', '')}
-                    </Text>
-                    <Text style={managementStyles.itemCoursePill}>{item.course}</Text>
-                </View>
-            </View>
-            
-            {/* Action buttons */}
-            {isSelected && (
-                <View style={managementStyles.actionButtons}>
-                    <TouchableOpacity style={managementStyles.saveButton} 
-                        onPress={() => Alert.alert('Save Item', `Pretend this saved changes to ${item.name}`)}>
-                        <Text style={managementStyles.saveButtonText}>SAVE</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={managementStyles.deleteButton} 
-                        onPress={() => onDeleteItem(item.id)}>
-                        <Text style={managementStyles.deleteButtonText}>DELETE</Text>
-                    </TouchableOpacity>
-                </View>
-            )}
-        </TouchableOpacity>
+        <View style={managementStyles.itemContentRow}>
+          <View style={managementStyles.itemImagePlaceholder}>
+            <Text style={managementStyles.itemImageText}>🍛</Text>
+          </View>
+          <View style={managementStyles.itemDetails}>
+            <Text style={managementStyles.itemCoursePill}>{item.course}</Text>
+          </View>
+        </View>
+
+        {/* Action buttons */}
+        {isSelected && (
+          <View style={managementStyles.actionButtons}>
+            <TouchableOpacity style={managementStyles.saveButton}
+              onPress={() => Alert.alert('Save Item', `Pretend this saved changes to ${item.name}`)}>
+              <Text style={managementStyles.saveButtonText}>SAVE</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={managementStyles.deleteButton}
+              onPress={() => onDeleteItem(item.id)}>
+              <Text style={managementStyles.deleteButtonText}>DELETE</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+      </TouchableOpacity>
     );
   };
 
   return (
     <View style={managementStyles.screen}>
-    
+
 
       {/* translates to welscome chef Christoffel */}
       <View style={managementStyles.titleSection}>
         <Text style={managementStyles.appName}>Kalosirisate</Text>
         <Text style={managementStyles.appSubName}>Sef Christofel</Text>
-        
-        <Image source={{ uri: EXPO_SNACK_LOGO_URI }} style={managementStyles.logoImage} />
+        <Image source={AppLogo} style={managementStyles.logoImage} />
       </View>
-      
+
       {/* Search Bar*/}
       <View style={managementStyles.searchBarContainer}>
         <Text style={managementStyles.searchIcon}>🔍</Text>
         <TextInput
-            style={managementStyles.searchInput}
-            placeholder="Search Item"
-            placeholderTextColor={COLORS.TEXT_GRAY}
+          style={managementStyles.searchInput}
+          placeholder="Search Item"
+          placeholderTextColor={Colours.GrayText}
         />
       </View>
       <View style={managementStyles.searchResultsContainer}>
-          <Text style={managementStyles.searchResultsText}>Search Results</Text>
+        <Text style={managementStyles.searchResultsText}>Search Results</Text>
       </View>
-      
+
       <View style={managementStyles.addItemContainer}>
         <Text style={managementStyles.addItemText}>Add Menu Item</Text>
         <TouchableOpacity style={managementStyles.addButton} onPress={onOpenModal}>
-            <Text style={managementStyles.addButtonText}>+</Text>
+          <Text style={managementStyles.addButtonText}>+</Text>
         </TouchableOpacity>
       </View>
-      
+
       {/* List for items to be managed */}
       <View style={managementStyles.listContainer}>
         {managedItems.length === 0 ? (
@@ -490,20 +550,20 @@ const MenuManagementScreen: React.FC<MenuManagementScreenProps> = ({
           />
         )}
       </View>
-      
+
       {/* clear all*/}
       <TouchableOpacity style={managementStyles.clearAllButton} onPress={onClearAll}>
-          <Text style={managementStyles.clearAllButtonText}>CLEAR ALL</Text>
+        <Text style={managementStyles.clearAllButtonText}>CLEAR ALL</Text>
       </TouchableOpacity>
     </View>
   );
 };
 
-// Main App 
+// Main App
 const App = () => {
   const [homeMenuItems, setHomeMenuItems] = useState<MenuItem[]>([]);
-  const [managedItems, setManagedItems] = useState<MenuItem[]>([]); 
-  const [isModalVisible, setIsModalVisible] = useState(false);
+  const [managedItems, setManagedItems] = useState<MenuItem[]>([]);
+  const [isModalVisible, setIsModalVisible] = useState<boolean>(false);
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
 
   const handleAddItem = (newItem: Omit<MenuItem, 'id'>) => {
@@ -511,7 +571,7 @@ const App = () => {
       ...newItem,
       id: Date.now().toString(),
     };
-    
+
     setHomeMenuItems(prevItems => [newItemWithId, ...prevItems]);
     setManagedItems(prevItems => [newItemWithId, ...prevItems]);
   };
@@ -524,41 +584,43 @@ const App = () => {
 
   const handleClearAll = () => {
     Alert.alert(
-        "Confirm Clear All",
-        "Are you sure you want to clear all addeditems? This can not be retrieved",
-        [
-            {text: "Cancel", style: "cancel"},
-            {text: "Clear All", style: 'destructive', onPress: () => {
-                setHomeMenuItems([]);
-                setManagedItems([]);
-                setSelectedItemId(null);
-            }}
-        ]
+      "Confirm Clear All",
+      "Are you sure you want to clear all added items? This can not be retrieved",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Clear All", style: 'destructive', onPress: () => {
+            setHomeMenuItems([]);
+            setManagedItems([]);
+            setSelectedItemId(null);
+          }
+        }
+      ]
     );
   };
-  
+
 
   return (
     <SafeAreaView style={styles.appContainer}>
-      <ScrollView 
-        style={styles.fullScroll} 
+      <ScrollView
+        style={styles.fullScroll}
         showsVerticalScrollIndicator={false}
       >
         <HomeScreen menuItems={homeMenuItems} />
 
         <View style={styles.divider} />
 
-        <MenuManagementScreen 
-            onOpenModal={() => setIsModalVisible(true)}
-            managedItems={managedItems}
-            selectedItemId={selectedItemId}
-            onSelectItem={setSelectedItemId}
-            onDeleteItem={handleDeleteItem}
-            onClearAll={handleClearAll}
+        <MenuManagementScreen
+          onOpenModal={() => setIsModalVisible(true)}
+          managedItems={managedItems}
+          selectedItemId={selectedItemId}
+          onSelectItem={setSelectedItemId}
+          onDeleteItem={handleDeleteItem}
+          onClearAll={handleClearAll}
         />
-        
+
       </ScrollView>
-      
+
       <AddItemModal
         isVisible={isModalVisible}
         onClose={() => setIsModalVisible(false)}
@@ -569,20 +631,20 @@ const App = () => {
   );
 };
 
-// stylesheet 
+// stylesheet
 
 const styles = StyleSheet.create({
   appContainer: {
     flex: 1,
-    backgroundColor: COLORS.APP_BACKGROUND,
+    backgroundColor: Colours.AppBackGround,
   },
   fullScroll: {
     flex: 1,
-    paddingBottom: 20, 
+    paddingBottom: 20,
   },
   divider: {
-    height: 3, 
-    backgroundColor: COLORS.DIVIDER_BLACK,
+    height: 3,
+    backgroundColor: Colours.DivisionLine,
     width: '100%',
   },
 });
@@ -591,7 +653,7 @@ const commonStyles = StyleSheet.create({
     width: '100%',
     paddingHorizontal: 15,
     paddingTop: 5,
-    backgroundColor: COLORS.APP_BACKGROUND,
+    backgroundColor: Colours.AppBackGround,
   },
   titleSection: {
     alignItems: 'center',
@@ -602,58 +664,58 @@ const commonStyles = StyleSheet.create({
   logoImage: {
     width: 60,
     height: 60,
-    borderRadius: 30,
+    borderRadius: 3,
     position: 'absolute',
-    right: 15,
-    top: 5,
-    borderWidth: 1,
-    borderColor: COLORS.TEXT_ACCENT,
+    right: 1,
+    top: 1,
+    borderWidth: 0.2,
+    borderColor: Colours.HeadingText,
   },
   appName: {
     fontSize: 26,
     fontWeight: 'bold',
-    color: COLORS.HOME_HEADER_TITLE,
+    color: Colours.HomeTitle,
     fontStyle: 'italic',
   },
   appSubName: {
     fontSize: 18,
-    color: COLORS.HOME_HEADER_TITLE,
+    color: Colours.HomeTitle,
     fontStyle: 'italic',
   },
   listContainer: {
-    minHeight: 200, 
-    backgroundColor: COLORS.APP_BACKGROUND, 
+    minHeight: 200,
+    backgroundColor: Colours.AppBackGround,
     borderRadius: 8,
     padding: 5,
     marginVertical: 10,
-    flexGrow: 1, 
+    flexGrow: 1,
   },
   itemImagePlaceholder: {
     width: '100%',
-    height: 100, 
+    height: 100,
     borderRadius: 8,
-    backgroundColor: COLORS.ITEM_IMAGE_PLACEHOLDER,
+    backgroundColor: Colours.ImageHolder,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 5,
   },
   itemImageText: {
     fontSize: 30,
-    color: COLORS.TEXT_LIGHT,
+    color: Colours.MainTextColour,
   },
   itemName: {
-    color: COLORS.TEXT_LIGHT,
+    color: Colours.MainTextColour,
     fontSize: 16,
     fontWeight: 'bold',
     marginTop: 5,
   },
   itemDescription: {
-    color: COLORS.TEXT_GRAY,
+    color: Colours.GrayText,
     fontSize: 12,
     marginTop: 2,
   },
   itemPrice: {
-    color: COLORS.TEXT_ACCENT,
+    color: Colours.HeadingText,
     fontSize: 14,
     fontWeight: '600',
     marginTop: 2,
@@ -663,46 +725,42 @@ const commonStyles = StyleSheet.create({
 const homeStyles = StyleSheet.create({
   ...commonStyles,
   titleSection: {
-      ...commonStyles.titleSection,
-      flexDirection: 'row', // Align logo, name, and pill horizontally
-      justifyContent: 'center',
-      alignItems: 'center',
+    ...(commonStyles.titleSection as object),
+    flexDirection: 'row', // Align logo, name, and scrollview horizontally
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   appNameContainer: {
     flex: 1,
     alignItems: 'center',
   },
   translatorPill: {
-    backgroundColor: COLORS.COURSE_PILL_BG,
+    backgroundColor: Colours.CourseScrollviewBG,
     borderRadius: 5,
     paddingVertical: 5,
     paddingHorizontal: 10,
     borderWidth: 1,
-    borderColor: COLORS.COURSE_PILL_BORDER,
+    borderColor: Colours.CourseSVBorder,
     position: 'absolute',
     left: 15,
     top: 18,
     zIndex: 10,
   },
   translatorPillText: {
-    color: COLORS.TEXT_ACCENT,
+    color: Colours.HeadingText,
     fontWeight: 'bold',
     fontSize: 14,
   },
-  header: {
-    // Removed unused header styles, translator is now in titleSection
-    height: 1, 
-  },
   decoyScrollView: {
     maxHeight: 60,
-    marginVertical: 10,
+    marginVertical: 15,
   },
   decoyScrollViewContent: {
     alignItems: 'center',
-    paddingHorizontal: 5,
+    paddingHorizontal: 1,
   },
   coursePill: {
-    backgroundColor: COLORS.COURSE_PILL_BG,
+    backgroundColor: Colours.CourseScrollviewBG,
     borderRadius: 8,
     paddingVertical: 5,
     paddingHorizontal: 10,
@@ -711,36 +769,36 @@ const homeStyles = StyleSheet.create({
     justifyContent: 'center',
     minWidth: 80,
     borderWidth: 1,
-    borderColor: COLORS.COURSE_PILL_BORDER,
+    borderColor: Colours.CourseSVBorder,
   },
   courseName: {
-    color: COLORS.TEXT_LIGHT,
+    color: Colours.MainTextColour,
     fontWeight: 'bold',
     fontSize: 14,
   },
   coursePrice: {
-    color: COLORS.TEXT_ACCENT,
+    color: Colours.HeadingText,
     fontSize: 12,
   },
-  
+
   courseSectionContainer: {
-      marginBottom: 20,
-      paddingHorizontal: 5,
+    marginBottom: 20,
+    paddingHorizontal: 5,
   },
   courseSectionTitle: {
-      fontSize: 24,
-      fontWeight: 'bold',
-      color: COLORS.TEXT_ACCENT,
-      marginBottom: 10,
-      textAlign: 'center',
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: Colours.HeadingText,
+    marginBottom: 10,
+    textAlign: 'center',
   },
   row: {
     justifyContent: 'space-between',
     marginBottom: 10,
   },
   menuItemWrapper: {
-    width: '48%', 
-    backgroundColor: COLORS.LIST_BACKGROUND,
+    width: '48%',
+    backgroundColor: Colours.ListBackGround,
     borderRadius: 10,
     padding: 10,
     marginBottom: 10,
@@ -752,16 +810,16 @@ const homeStyles = StyleSheet.create({
     padding: 50,
   },
   emptyText: {
-    color: COLORS.TEXT_GRAY,
+    color: Colours.GrayText,
     textAlign: 'center',
     marginTop: 10,
     fontStyle: 'italic',
   },
   totalItems: {
-    color: COLORS.TEXT_LIGHT,
+    color: Colours.MainTextColour,
     textAlign: 'center',
     paddingVertical: 5,
-    backgroundColor: COLORS.LIST_BACKGROUND,
+    backgroundColor: Colours.ListBackGround,
     marginBottom: 10,
     borderRadius: 8,
   }
@@ -769,92 +827,90 @@ const homeStyles = StyleSheet.create({
 
 const managementStyles = StyleSheet.create({
   ...commonStyles,
-  // Removed screenTitle style
-  
   searchBarContainer: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      backgroundColor: COLORS.LIST_BACKGROUND,
-      borderRadius: 8,
-      paddingHorizontal: 15,
-      marginVertical: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colours.ListBackGround,
+    borderRadius: 8,
+    paddingHorizontal: 15,
+    marginVertical: 10,
   },
   searchIcon: {
-      color: COLORS.TEXT_ACCENT,
-      fontSize: 20,
-      marginRight: 10,
+    color: Colours.HeadingText,
+    fontSize: 20,
+    marginRight: 10,
   },
   searchInput: {
-      flex: 1,
-      height: 45,
-      color: COLORS.TEXT_LIGHT,
+    flex: 1,
+    height: 45,
+    color: Colours.MainTextColour,
   },
   searchResultsContainer: {
-      backgroundColor: COLORS.LIST_BACKGROUND,
-      borderRadius: 8,
-      padding: 10,
-      alignItems: 'center',
-      marginBottom: 10,
+    backgroundColor: Colours.ListBackGround,
+    borderRadius: 8,
+    padding: 10,
+    alignItems: 'center',
+    marginBottom: 10,
   },
   searchResultsText: {
-      color: COLORS.TEXT_ACCENT,
-      fontSize: 16,
-      fontWeight: 'bold',
+    color: Colours.HeadingText,
+    fontSize: 16,
+    fontWeight: 'bold',
   },
-  
+
   addItemContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingVertical: 5,
     borderTopWidth: 1,
-    borderTopColor: COLORS.TEXT_GRAY,
+    borderTopColor: Colours.GrayText,
     marginVertical: 10,
   },
   addItemText: {
-    color: COLORS.TEXT_ACCENT,
+    color: Colours.HeadingText,
     fontSize: 16,
     fontWeight: 'bold',
   },
   addButton: {
-    backgroundColor: COLORS.APP_BACKGROUND,
+    backgroundColor: Colours.AppBackGround,
     padding: 5,
     borderRadius: 5,
     borderWidth: 1,
-    borderColor: COLORS.TEXT_ACCENT,
+    borderColor: Colours.HeadingText,
   },
   addButtonText: {
-    color: COLORS.TEXT_ACCENT,
+    color: Colours.HeadingText,
     fontSize: 20,
     fontWeight: 'bold',
   },
-  
+
   mockItemCard: {
     padding: 10,
     marginVertical: 5,
-    backgroundColor: COLORS.LIST_BACKGROUND,
+    backgroundColor: Colours.ListBackGround,
     borderRadius: 8,
     position: 'relative',
     borderWidth: 1,
-    borderColor: COLORS.LIST_BACKGROUND, 
+    borderColor: Colours.ListBackGround,
   },
   mockItemCardSelected: {
     borderWidth: 2,
-    borderColor: COLORS.BUTTON_ACCENT,
+    borderColor: Colours.ButtonColour,
   },
   itemHeaderRow: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      marginBottom: 10,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
   },
   itemCourseName: {
-    color: COLORS.TEXT_LIGHT,
+    color: Colours.MainTextColour,
     fontSize: 22,
     fontWeight: 'bold',
   },
   itemPriceName: {
-    color: COLORS.TEXT_ACCENT,
+    color: Colours.HeadingText,
     fontSize: 22,
     fontWeight: 'bold',
   },
@@ -867,59 +923,59 @@ const managementStyles = StyleSheet.create({
     paddingLeft: 10,
   },
   itemCoursePill: {
-      color: COLORS.TEXT_GRAY,
-      fontSize: 12,
-      marginTop: 5,
-      alignSelf: 'flex-start',
-      backgroundColor: COLORS.COURSE_PILL_BG,
-      paddingHorizontal: 8,
-      paddingVertical: 3,
-      borderRadius: 5,
+    color: Colours.GrayText,
+    fontSize: 12,
+    marginTop: 5,
+    alignSelf: 'flex-start',
+    backgroundColor: Colours.CourseScrollviewBG,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 5,
   },
   actionButtons: {
-      flexDirection: 'row',
-      justifyContent: 'flex-start',
-      marginTop: 15,
-      paddingTop: 10,
-      borderTopWidth: 1,
-      borderTopColor: COLORS.ITEM_IMAGE_PLACEHOLDER,
+    flexDirection: 'row',
+    justifyContent: 'flex-start',
+    marginTop: 15,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: Colours.ImageHolder,
   },
   saveButton: {
-      backgroundColor: COLORS.TEXT_ACCENT,
-      paddingHorizontal: 20,
-      paddingVertical: 10,
-      borderRadius: 5,
-      marginRight: 20,
+    backgroundColor: Colours.HeadingText,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 5,
+    marginRight: 20,
   },
   saveButtonText: {
-      color: COLORS.DIVIDER_BLACK,
-      fontWeight: 'bold',
-      fontSize: 14,
+    color: Colours.DivisionLine,
+    fontWeight: 'bold',
+    fontSize: 14,
   },
   deleteButton: {
-      backgroundColor: COLORS.ACTION_DELETE,
-      paddingHorizontal: 20,
-      paddingVertical: 10,
-      borderRadius: 5,
+    backgroundColor: Colours.DeleteBtn,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 5,
   },
   deleteButtonText: {
-      color: COLORS.TEXT_LIGHT,
-      fontWeight: 'bold',
-      fontSize: 14,
+    color: Colours.MainTextColour,
+    fontWeight: 'bold',
+    fontSize: 14,
   },
   clearAllButton: {
-      borderWidth: 1,
-      borderColor: COLORS.TEXT_ACCENT,
-      padding: 15,
-      borderRadius: 5,
-      alignItems: 'center',
-      marginTop: 10,
-      marginBottom: 20,
+    borderWidth: 1,
+    borderColor: Colours.HeadingText,
+    padding: 15,
+    borderRadius: 5,
+    alignItems: 'center',
+    marginTop: 10,
+    marginBottom: 20,
   },
   clearAllButtonText: {
-      color: COLORS.TEXT_ACCENT,
-      fontWeight: 'bold',
-      fontSize: 16,
+    color: Colours.HeadingText,
+    fontWeight: 'bold',
+    fontSize: 16,
   },
   emptyList: {
     flex: 1,
@@ -929,7 +985,7 @@ const managementStyles = StyleSheet.create({
     minHeight: 150,
   },
   emptyText: {
-    color: COLORS.TEXT_GRAY,
+    color: Colours.GrayText,
     textAlign: 'center',
     marginTop: 10,
     fontStyle: 'italic',
@@ -941,11 +997,11 @@ const modalStyles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: COLORS.MODAL_OVERLAY,
+    backgroundColor: Colours.FloatScreen,
   },
   modalView: {
     margin: 20,
-    backgroundColor: COLORS.MODAL_BACKGROUND,
+    backgroundColor: Colours.ModelBackGround,
     borderRadius: 10,
     padding: 25,
     alignItems: 'center',
@@ -960,25 +1016,25 @@ const modalStyles = StyleSheet.create({
     marginBottom: 20,
     fontSize: 18,
     fontWeight: 'bold',
-    color: COLORS.TEXT_LIGHT,
+    color: Colours.MainTextColour,
   },
   input: {
     height: 45,
     width: '100%',
-    borderColor: COLORS.TEXT_GRAY,
+    borderColor: Colours.GrayText,
     borderWidth: 1,
     borderRadius: 5,
     paddingHorizontal: 15,
     marginBottom: 5,
-    backgroundColor: COLORS.MODAL_INPUT_BG,
-    color: COLORS.TEXT_LIGHT,
+    backgroundColor: Colours.FloatScreenBG,
+    color: Colours.MainTextColour,
   },
   inputError: {
-    borderColor: COLORS.ERROR_TEXT,
+    borderColor: Colours.ErrorMsg,
     borderWidth: 2,
   },
   errorText: {
-    color: COLORS.ERROR_TEXT,
+    color: Colours.ErrorMsg,
     alignSelf: 'flex-start',
     marginLeft: 5,
     marginBottom: 10,
@@ -992,26 +1048,26 @@ const modalStyles = StyleSheet.create({
   pickerMock: {
     height: 45,
     width: '100%',
-    borderColor: COLORS.TEXT_GRAY,
+    borderColor: Colours.GrayText,
     borderWidth: 1,
     borderRadius: 5,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 15,
-    backgroundColor: COLORS.MODAL_INPUT_BG,
+    backgroundColor: Colours.FloatScreenBG,
   },
   pickerInputMock: {
     flex: 1,
-    color: COLORS.TEXT_LIGHT,
+    color: Colours.MainTextColour,
     fontSize: 16,
   },
   dropdownIcon: {
-    color: COLORS.TEXT_GRAY,
+    color: Colours.GrayText,
     fontSize: 12,
   },
   buttonSave: {
-    backgroundColor: COLORS.TEXT_ACCENT,
+    backgroundColor: Colours.HeadingText,
     borderRadius: 5,
     padding: 12,
     elevation: 2,
@@ -1019,10 +1075,24 @@ const modalStyles = StyleSheet.create({
     alignItems: 'center',
   },
   textStyle: {
-    color: COLORS.DIVIDER_BLACK,
+    color: Colours.DivisionLine,
     fontWeight: 'bold',
     textAlign: 'center',
     fontSize: 16,
+  },
+  pickerItem: {
+    padding: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: Colours.GrayText,
+    width: '100%',
+    alignItems: 'center',
+  },
+  pickerItemText: {
+    color: Colours.MainTextColour,
+    fontSize: 16,
+  },
+  pickerItemSelected: {
+    backgroundColor: Colours.ButtonColour,
   },
 });
 
