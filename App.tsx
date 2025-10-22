@@ -1,693 +1,1029 @@
-import React, { useState, useCallback } from 'react';
-import {
+//imports//
+import React, { useState, useMemo } from 'react';// functions and memory
+import {StyleSheet,
   View,
   Text,
-  StyleSheet,
   ScrollView,
-  FlatList,
   TouchableOpacity,
   TextInput,
   Modal,
   Dimensions,
-  Image,
+  SafeAreaView,
   Alert,
+  Image,
+  FlatList,
 } from 'react-native';
-// NOTE: Ensure you have installed a vector icon library (e.g., '@expo/vector-icons' or 'react-native-vector-icons')
-import { Ionicons } from '@expo/vector-icons'; 
 
-// ====================================================================
-//                             1. CONSTANTS & TYPES
-// ====================================================================
-
-const { height, width } = Dimensions.get('window');
-
-// Colors based on user request and image observation
-const COLORS = {
-  APP_BACKGROUND: '#122025',      // Main app background
-  SCROLL_FLATLIST_BG: '#09161b',  // ScrollView/FlatList background
-  MODAL_BAR_BG: '#09191B',        // Modal inputs/bars background (as requested: #09191B)
-  DIVIDER_LINE: '#000000',        // Black line divider
-  TEXT_LIGHT: '#FFFFFF',
-  TEXT_MUTED: '#B0B0B0',
-  BUTTON_RED: '#E31C25',          // Used for SAVE/DELETE/Modal Save
-  BUTTON_GRAY: '#404040',         // Used for CLEAR ALL/Modal Close button
-  SELECTED_CARD: '#1E2D35',       // Slightly darker shade for the card background
-};
-
-// Placeholder for the App Logo image - REPLACE WITH YOUR ACTUAL PATH
-const AppLogo = require('./assets/snack-icon.png'); 
-
-// Predefined Courses (used for decoy and picker)
-const COURSES = [
-  { name: 'Orektíá', avgPrice: 24, id: 'c1' }, // Starters
-  { name: 'Soúpa', avgPrice: 28, id: 'c2' }, // Soup
-  { name: 'Próta Piáto', avgPrice: 37, id: 'c3' }, // First Plate/Main
-  { name: 'Saláta', avgPrice: 30, id: 'c4' }, // Salad
-];
-
-const LANGUAGES = [
-  { code: 'el', name: 'Ελληνικά' }, // Greek
-  { code: 'en', name: 'English' },
-  { code: 'fr', name: 'Français' },
-  { code: 'ar', name: 'Arabic' },
-];
-
-// Type Definitions
+// type definitions
 interface MenuItem {
   id: string;
   name: string;
   description: string;
-  course: string;
-  price: number;
-}
-
-interface NewItemForm {
-  name: string;
-  description: string;
-  course: string;
   price: string;
+  course: string;
+}
+//translator from greek to english vise versa
+type LanguageCode = 'EN' | 'GR'; 
+type MenuByCourse = {
+    [course: string]: MenuItem[];
+};
+
+
+const EXPO_SNACK_LOGO_URI = '../assets/splash.png';
+
+//colours for the app
+const COLORS = {
+  APP_BACKGROUND: '#122025',
+  LIST_BACKGROUND: '#09161b',
+  MODAL_INPUT_BG: '#09191B',
+  DIVIDER_BLACK: '#000000',
+  TEXT_LIGHT: '#FFFFFF',
+  TEXT_ACCENT: '#C1DBE3',
+  TEXT_GRAY: '#999999',
+  BUTTON_ACCENT: '#1A67B1',
+  COURSE_PILL_BG: '#12394E',
+  COURSE_PILL_BORDER: '#C1DBE3',
+  MODAL_OVERLAY: 'rgba(18, 32, 37, 0.9)',
+  MODAL_BACKGROUND: '#122025',
+  ITEM_IMAGE_PLACEHOLDER: '#2C475A',
+  HOME_HEADER_TITLE: '#D4E6EC',
+  ACTION_SAVE: '#38A738',
+  ACTION_DELETE: '#E74C3C',
+  ERROR_TEXT: '#E74C3C',
+};
+
+// translated words
+const TRANSLATION_MAP = {
+  'EN': {
+    'Orektiká': 'Appetizers',
+    'Soúpa': 'Soup',
+    'Próta Piáto': 'Main Course',
+    'Saláta': 'Salad',
+    'Glyká': 'Desserts',
+    'Potá': 'Drinks',
+  },
+  'GR': {
+    'Appetizers': 'Ορεκτικά',
+    'Soup': 'Σούπα',
+    'Main Course': 'Πρώτο Πιάτο',
+    'Salad': 'Σαλάτα',
+    'Desserts': 'Γλυκά',
+    'Drinks': 'Ποτά',
+  },
+};
+
+const translateText = (text: string, currentLang: LanguageCode): string => {
+  if (currentLang === 'GR') {
+    return TRANSLATION_MAP['EN'][text] || text;
+  }
+  if (currentLang === 'EN') {
+    return TRANSLATION_MAP['GR'][text] || text;
+  }
+  return text;
+};
+
+const translateItem = (item: MenuItem, currentLang: LanguageCode): MenuItem => {
+  const targetMap = TRANSLATION_MAP[currentLang];
+  
+  
+  const originalCourseKey = Object.keys(TRANSLATION_MAP['EN']).find(key => 
+      TRANSLATION_MAP['EN'][key] === item.course || TRANSLATION_MAP['GR'][key] === item.course // Handles both GR/EN input
+  ) || item.course;
+  
+  // Translate the course name using the original key
+  const translatedCourse = targetMap[originalCourseKey] || item.course;
+
+  const translatedName = currentLang === 'GR' 
+    ? item.name.replace(' (EN)', ' (GR)') 
+    : item.name.replace(' (GR)', ' (EN)');
+  const translatedDescription = currentLang === 'GR' 
+    ? item.description.replace(' (EN)', ' (GR)')
+    : item.description.replace(' (GR)', ' (EN)');
+
+  return {
+    ...item,
+    name: translatedName,
+    description: translatedDescription,
+    course: translatedCourse,
+  };
+};
+
+const groupByCourse = (items: MenuItem[]): MenuByCourse => {
+    return items.reduce((acc, item) => {
+        const courseName = item.course;
+        if (!acc[courseName]) {
+            acc[courseName] = [];
+        }
+        acc[courseName].push(item);
+        return acc;
+    }, {} as MenuByCourse);
+};
+
+const DECOY_COURSES = [
+  { name: 'Orektiká', price: '€24' },
+  { name: 'Soúpa', price: '€28' },
+  { name: 'Próta Piáto', price: '€37' },
+  { name: 'Saláta', price: '€30' },
+];
+const COURSES = ['Orektiká', 'Soúpa', 'Próta Piáto', 'Saláta', 'Glyká', 'Potá'];
+
+
+// flatlist components/model
+interface AddItemModalProps {
+  isVisible: boolean;
+  onClose: () => void;
+  onSave: (item: Omit<MenuItem, 'id'>) => void;
+  courses: string[];
 }
 
-// Initial Decoy Data 
-const INITIAL_MENU_ITEMS: MenuItem[] = [
-  { id: 'd1', name: 'Kefedakia', description: 'Spiced meatballs with lemon and herbs.', course: 'Orektíá', price: 15.00 },
-  { id: 'd2', name: 'Saganaki', description: 'Fried kefalotyri cheese, golden and crispy.', course: 'Orektíá', price: 12.50 },
-  { id: 'd3', name: 'Fasolada', description: 'White bean soup with tomato and olive oil.', course: 'Soúpa', price: 10.00 },
-];
+const AddItemModal: React.FC<AddItemModalProps> = ({ isVisible, onClose, onSave, courses }) => {
+  const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
+  const [price, setPrice] = useState('');
+  const [course, setCourse] = useState(courses[0]);
+  const [nameError, setNameError] = useState(false);
+  const [descriptionError, setDescriptionError] = useState(false);
+  const [priceError, setPriceError] = useState(false);
 
 
-// ====================================================================
-//                             2. MAIN COMPONENT LOGIC
-// ====================================================================
+  const handlePriceChange = (text: string) => {
+    // price to only allow numbers 
+    const cleanText = text.replace(/[^0-9.]/g, ''); 
+    const parts = cleanText.split('.');
 
-const CombinedScreen: React.FC = () => {
-  // --- State Variables ---
-  const [menuItems, setMenuItems] = useState<MenuItem[]>(INITIAL_MENU_ITEMS);
-  const [selectedItem, setSelectedItem] = useState<MenuItem | null>(null);
-  const [isModalVisible, setIsModalVisible] = useState(false);
-  const [isTranslatorOpen, setIsTranslatorOpen] = useState(false);
-  const [newItem, setNewItem] = useState<NewItemForm>({
-    name: '',
-    description: '',
-    course: COURSES[0].name,
-    price: '',
-  });
-
-  // --- Handlers ---
-  const handleAddItem = useCallback(() => {
-    if (!newItem.name || !newItem.description || !newItem.course || !newItem.price) {
-      Alert.alert('Missing Info', 'Please fill in all fields (Name, Description, Price, Course).');
-      return;
+    // allows one decimal point
+    if (parts.length > 2) {
+      setPrice(parts[0] + '.' + parts.slice(1).join(''));
+    } else {
+      setPrice(cleanText);
     }
-    const price = parseFloat(newItem.price);
-    if (isNaN(price) || price <= 0) {
-      Alert.alert('Invalid Price', 'Price must be a valid number greater than zero.');
-      return;
+    setPriceError(false);
+  };
+  
+  const handleSave = () => {
+    let isValid = true;
+
+    // error checks
+    if (!name.trim()) {
+        setNameError(true);
+        isValid = false;
+    } else {
+        setNameError(false);
     }
 
-    // Add new item to the top
-    const newMenuItem: MenuItem = { id: Math.random().toString(), name: newItem.name, description: newItem.description, course: newItem.course, price: price };
-    setMenuItems(prev => [newMenuItem, ...prev]); 
-
-    // Reset form and close modal
-    setNewItem({ name: '', description: '', course: COURSES[0].name, price: '' });
-    setIsModalVisible(false);
-  }, [newItem]);
-
-  const handleSaveEdit = useCallback(() => {
-    if (selectedItem) {
-      Alert.alert('Save', `Item "${selectedItem.name}" saved (Placeholder for edit logic).`);
-      setSelectedItem(null);
+    if (!description.trim()) {
+        setDescriptionError(true);
+        isValid = false;
+    } else {
+        setDescriptionError(false);
     }
-  }, [selectedItem]);
-
-  const handleDeleteItem = useCallback(() => {
-    if (selectedItem) {
-      setMenuItems(prev => prev.filter(item => item.id !== selectedItem.id));
-      setSelectedItem(null);
-      Alert.alert('Deleted', `Item "${selectedItem.name}" deleted.`);
+    
+    // Check if price is empty
+    if (!price.trim() || price === '.') {
+        setPriceError(true);
+        isValid = false;
+    } else {
+        setPriceError(false);
     }
-  }, [selectedItem]);
 
-  const handleClearAll = useCallback(() => {
-    setMenuItems([]);
-    setSelectedItem(null);
-    Alert.alert('Cleared', 'All items have been removed from the menu list.');
-  }, []);
+    if (!isValid) {
+        Alert.alert('Missing Information', 'Please fill in all needed info(Name, Description, and a valid Price) before saving.');
+        return;
+    }
 
-  const handleTranslatorSelect = (lang: { name: string }) => {
-    Alert.alert('Translator', `App language set to ${lang.name}.`);
-    setIsTranslatorOpen(false);
+    onSave({
+      name: name.trim(), 
+      description: description.trim(),
+      price: `€${parseFloat(price.trim()).toFixed(2)}`,
+      course, // using the greek course name
+    });
+    
+    // clear and closing float screen
+    setName('');
+    setDescription('');
+    setPrice('');
+    setCourse(courses[0]);
+    setNameError(false);
+    setDescriptionError(false);
+    setPriceError(false);
+    onClose();
   };
 
-  // --- Sub-Components ---
-  const renderManagementItem = ({ item }: { item: MenuItem }) => (
-    <TouchableOpacity
-      style={[
-        styles.menuItemCard,
-        selectedItem?.id === item.id && styles.selectedCard,
-      ]}
-      onPress={() => setSelectedItem(selectedItem?.id === item.id ? null : item)}
-      activeOpacity={0.8}
+  return (
+    <Modal
+      animationType="fade"
+      transparent={true}
+      visible={isVisible}
+      onRequestClose={onClose}
     >
-      <View style={styles.cardContent}>
-        <View>
-          <Text style={styles.cardTitle}>{item.name} <Text style={styles.cardPrice}>€{item.price.toFixed(2)}</Text></Text>
-          <Text style={styles.cardDescription}>{item.description}</Text>
-        </View>
-        <Image source={AppLogo} style={styles.cardImage} />
-      </View>
+      <View style={modalStyles.centeredView}>
+        <View style={modalStyles.modalView}>
+          <Text style={modalStyles.modalTitle}>Add New Menu Item</Text>
 
-      {/* Action Buttons (Visible only when selected) */}
-      {selectedItem?.id === item.id && (
-        <View style={styles.actionButtonsContainer}>
-          <TouchableOpacity style={styles.saveButton} onPress={handleSaveEdit}>
-            <Text style={styles.buttonText}>SAVE</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.deleteButton} onPress={handleDeleteItem}>
-            <Text style={styles.buttonText}>DELETE</Text>
+          <TextInput
+            style={[modalStyles.input, nameError && modalStyles.inputError]}
+            placeholder="Item Name"
+            placeholderTextColor={COLORS.TEXT_GRAY}
+            value={name}
+            onChangeText={setName}
+            onBlur={() => setNameError(!name.trim())}
+          />
+          {nameError && <Text style={modalStyles.errorText}>Item Name needed.</Text>}
+          
+          <TextInput
+            style={[modalStyles.input, descriptionError && modalStyles.inputError, { height: 80 }]}
+            placeholder="Description"
+            placeholderTextColor={COLORS.TEXT_GRAY}
+            value={description}
+            onChangeText={setDescription}
+            onBlur={() => setDescriptionError(!description.trim())}
+            multiline
+          />
+          {descriptionError && <Text style={modalStyles.errorText}>Description needed.</Text>}
+          
+          <TextInput
+            style={[modalStyles.input, priceError && modalStyles.inputError]}
+            placeholder="Price of dish"
+            placeholderTextColor={COLORS.TEXT_GRAY}
+            keyboardType="numeric"
+            value={price}
+            onChangeText={handlePriceChange}
+            onBlur={() => setPriceError(!price.trim() || price === '.')}
+          />
+          {priceError && <Text style={modalStyles.errorText}>Valid Price needed (numbers only).</Text>}
+
+          <View style={modalStyles.pickerContainer}>
+            <View style={modalStyles.pickerMock}>
+                <TextInput
+                    style={modalStyles.pickerInputMock}
+                    placeholder="Course"
+                    placeholderTextColor={COLORS.TEXT_GRAY}
+                    value={course}
+                    onChangeText={setCourse}
+                />
+                <Text style={modalStyles.dropdownIcon}>▼</Text>
+            </View>
+          </View>
+          
+          <TouchableOpacity
+            style={modalStyles.buttonSave}
+            onPress={handleSave}
+          >
+            <Text style={modalStyles.textStyle}>SAVE</Text>
           </TouchableOpacity>
         </View>
-      )}
-    </TouchableOpacity>
+      </View>
+    </Modal>
+  );
+};
+
+// Home Screen 
+const HomeScreen: React.FC<{ menuItems: MenuItem[] }> = ({ menuItems }) => {
+  const [currentLang, setCurrentLang] = useState<LanguageCode>('EN');
+  const languages: LanguageCode[] = ['GR', 'EN'];
+  const nextLang = languages.find(lang => lang !== currentLang) || 'GR';
+
+  const handleTranslate = () => {
+    setCurrentLang(nextLang);
+  };
+
+  const translatedItems = useMemo(() => {
+    return menuItems.map(item => translateItem(item, currentLang));
+  }, [menuItems, currentLang]);
+
+  const menuByCourse = useMemo(() => {
+      return groupByCourse(translatedItems);
+  }, [translatedItems]);
+
+  const courseKeys = Object.keys(menuByCourse);
+
+  const RenderMenuItem: React.FC<{ item: MenuItem }> = ({ item }) => (
+    <View style={homeStyles.menuItemWrapper}>
+        <View style={homeStyles.itemImagePlaceholder}>
+            <Text style={homeStyles.itemImageText}>🍝</Text>
+        </View>
+        <Text style={homeStyles.itemName}>{item.name}</Text>
+        <Text style={homeStyles.itemPrice}>{item.price}</Text>
+        <Text style={homeStyles.itemDescription} numberOfLines={2} ellipsizeMode="tail">{item.description}</Text>
+    </View>
+  );
+  
+  // Component to render items for a single course
+  const RenderCourseSection: React.FC<{ course: string, items: MenuItem[] }> = ({ course, items }) => (
+      <View style={homeStyles.courseSectionContainer}>
+          <Text style={homeStyles.courseSectionTitle}>{course}</Text>
+          <FlatList
+              data={items}
+              renderItem={({ item }) => <RenderMenuItem item={item} />}
+              keyExtractor={(item) => item.id}
+              numColumns={2}
+              columnWrapperStyle={homeStyles.row}
+              scrollEnabled={false}
+          />
+      </View>
   );
 
-  // --- JSX Rendering ---
   return (
-    <View style={styles.container}>
-      
-      {/* ---------------- HOME SCREEN SECTION ---------------- */}
-      <View style={styles.homeScreen}>
-        
-        {/* Translator Icon and Dropdown */}
-        <TouchableOpacity style={styles.translatorIcon} onPress={() => setIsTranslatorOpen(prev => !prev)}>
-          <Ionicons name="language" size={24} color={COLORS.TEXT_LIGHT} />
+    <View style={homeStyles.screen}>
+      <View style={homeStyles.titleSection}>
+        <TouchableOpacity style={homeStyles.translatorPill} onPress={handleTranslate}>
+          <Text style={homeStyles.translatorPillText}>{nextLang}</Text>
         </TouchableOpacity>
-
-        {isTranslatorOpen && (
-          <View style={styles.translatorDropdown}>
-            {LANGUAGES.map(lang => (
-              <TouchableOpacity key={lang.code} onPress={() => handleTranslatorSelect(lang)}>
-                <Text style={styles.translatorText}>{lang.name}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        )}
-
-        {/* App Name and Logo */}
-        <View style={styles.header}>
-          <Text style={styles.appName1}>Fengarófotis</Text>
-          <View style={styles.appTitleRow}>
-            <Text style={styles.appName2}>Psichés</Text>
-            <Image source={AppLogo} style={styles.logo} />
-          </View>
+        
+        <View style={homeStyles.appNameContainer}>
+            <Text style={homeStyles.appName}>Fengarófotis</Text>
+            <Text style={homeStyles.appSubName}>Psichés</Text>
         </View>
-
-        {/* Horizontal ScrollView (Decoy Courses) */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={styles.courseScrollView}
-          contentContainerStyle={styles.courseScrollViewContent}
-        >
-          {COURSES.map(course => (
-            <View key={course.id} style={styles.coursePill}>
-              <Text style={styles.courseName}>{course.name}</Text>
-              <Text style={styles.coursePrice}>€{course.avgPrice}</Text>
-            </View>
-          ))}
-        </ScrollView>
-
-        {/* Home Screen Menu FlatList */}
-        <FlatList
-          data={menuItems}
-          keyExtractor={item => item.id}
-          style={styles.homeFlatList}
-          renderItem={({ item }) => (
-            <View style={styles.homeMenuItem}>
-              <View style={styles.homeItemRow}>
-                <Image source={AppLogo} style={styles.homeItemImage} />
-                <View style={styles.homeItemText}>
-                  <Text style={styles.homeItemName}>{item.name}</Text>
-                  <Text style={styles.homeItemDescription}>{item.description}</Text>
-                </View>
-              </View>
-            </View>
-          )}
-          ListFooterComponent={<Text style={styles.totalItemsText}>Prepared Items: {menuItems.length}</Text>}
-        />
+        
+        {/* Logo positioned right */}
+        <Image source={{ uri: EXPO_SNACK_LOGO_URI }} style={homeStyles.logoImage} />
       </View>
 
-      {/* HORIZONTAL BLACK DIVIDER LINE */}
-      <View style={styles.divider} />
-
-      {/* ---------------- MENU MANAGEMENT SECTION ---------------- */}
-      <View style={styles.menuManagementScreen}>
-        <Text style={styles.managementTitle}>Menu Management</Text>
-        
-        {/* Disabled Search Bar (as requested) */}
-        <View style={styles.disabledSearchBar}>
-          <Ionicons name="search" size={20} color={COLORS.TEXT_MUTED} />
-          <Text style={styles.disabledSearchText}>Search Item (Disabled)</Text>
-        </View>
-
-        {/* Add New Item Button (opens modal) */}
-        <TouchableOpacity
-          style={styles.addNewItemButton}
-          onPress={() => setIsModalVisible(true)}
-        >
-          <Text style={styles.addNewItemText}>Add Menu Item</Text>
-          <Ionicons name="add" size={24} color={COLORS.TEXT_LIGHT} />
-        </TouchableOpacity>
-
-        {/* Menu Management FlatList */}
-        <FlatList
-          data={menuItems}
-          keyExtractor={item => item.id}
-          renderItem={renderManagementItem}
-          style={styles.menuFlatList}
-          contentContainerStyle={{ paddingBottom: 10 }}
-          ListEmptyComponent={
-            <Text style={styles.emptyListText}>No items. Add items above.</Text>
-          }
-        />
-
-        {/* Clear All Button */}
-        <TouchableOpacity style={styles.clearAllButton} onPress={handleClearAll}>
-          <Text style={styles.buttonText}>CLEAR ALL</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* ---------------- FLOATING MODAL SCREEN (Add New Item) ---------------- */}
-      <Modal
-        animationType="fade"
-        transparent={true}
-        visible={isModalVisible}
-        onRequestClose={() => setIsModalVisible(false)}
+      {/*Decoy Horizontal */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={homeStyles.decoyScrollView}
+        contentContainerStyle={homeStyles.decoyScrollViewContent}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            
-            {/* Modal Header */}
-            <View style={styles.modalHeaderBar}>
-              <Text style={styles.modalHeaderTitle}>Add New Menu Item</Text>
-              <TouchableOpacity onPress={() => setIsModalVisible(false)}>
-                 <Ionicons name="close-circle-outline" size={30} color={COLORS.TEXT_LIGHT} />
-              </TouchableOpacity>
-            </View>
-
-            {/* Form Inputs */}
-            <View style={styles.modalFormContainer}>
-              <TextInput
-                style={styles.modalInput}
-                placeholder="Item Name"
-                placeholderTextColor={COLORS.TEXT_MUTED}
-                value={newItem.name}
-                onChangeText={text => setNewItem(prev => ({ ...prev, name: text }))}
-              />
-              <TextInput
-                style={styles.modalInput}
-                placeholder="Description"
-                placeholderTextColor={COLORS.TEXT_MUTED}
-                value={newItem.description}
-                onChangeText={text => setNewItem(prev => ({ ...prev, description: text }))}
-              />
-              
-              {/* Course Picker (Horizontal ScrollView as Picker) */}
-              <View style={styles.pickerContainer}>
-                  <Text style={styles.pickerLabel}>Course:</Text>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                      {COURSES.map(course => (
-                          <TouchableOpacity
-                              key={course.id}
-                              style={[
-                                  styles.pickerButton,
-                                  newItem.course === course.name && styles.pickerButtonSelected,
-                              ]}
-                              onPress={() => setNewItem(prev => ({ ...prev, course: course.name }))}
-                          >
-                              <Text style={styles.pickerButtonText}>{course.name}</Text>
-                          </TouchableOpacity>
-                      ))}
-                  </ScrollView>
-              </View>
-
-              <TextInput
-                style={styles.modalInput}
-                placeholder="Price"
-                placeholderTextColor={COLORS.TEXT_MUTED}
-                keyboardType="numeric"
-                value={newItem.price}
-                onChangeText={text => setNewItem(prev => ({ ...prev, price: text.replace(/[^0-9.]/g, '') }))}
-              />
-            </View>
-
-            {/* Save Button */}
-            <TouchableOpacity style={styles.modalSaveButton} onPress={handleAddItem}>
-              <Text style={styles.buttonText}>SAVE</Text>
-            </TouchableOpacity>
+        {DECOY_COURSES.map((course, index) => (
+          <View key={index} style={homeStyles.coursePill}>
+            <Text style={homeStyles.courseName}>{translateText(course.name, currentLang)}</Text>
+            <Text style={homeStyles.coursePrice}>{course.price}</Text>
           </View>
-        </View>
-      </Modal>
+        ))}
+      </ScrollView>
+
+      {/*Menu List (Grouped by Course)*/}
+      <View style={homeStyles.listContainer}>
+        {courseKeys.length === 0 ? (
+          <View style={homeStyles.emptyList}>
+            <Text style={homeStyles.emptyText}>
+              Added items/dishes will be shown here
+            </Text>
+          </View>
+        ) : (
+          <FlatList
+            data={courseKeys}
+            renderItem={({ item: course }) => (
+                <RenderCourseSection course={translateText(course, currentLang)} items={menuByCourse[course]} />
+            )}
+            keyExtractor={(course) => course}
+            showsVerticalScrollIndicator={false}
+            scrollEnabled={false} 
+          />
+        )}
+      </View>
+      <Text style={homeStyles.totalItems}>Total Items: {menuItems.length}</Text>
     </View>
   );
 };
 
-// ====================================================================
-//                             3. STYLESHEET
-// ====================================================================
+// Menu Management Screen
+interface MenuManagementScreenProps {
+    onOpenModal: () => void;
+    managedItems: MenuItem[];
+    selectedItemId: string | null;
+    onSelectItem: (id: string | null) => void;
+    onDeleteItem: (id: string) => void;
+    onClearAll: () => void;
+}
+
+const MenuManagementScreen: React.FC<MenuManagementScreenProps> = ({ 
+    onOpenModal, 
+    managedItems, 
+    selectedItemId, 
+    onSelectItem, 
+    onDeleteItem,
+    onClearAll,
+}) => {
+  
+  const RenderManagedItem: React.FC<{ item: MenuItem }> = ({ item }) => {
+    const isSelected = item.id === selectedItemId;
+
+    return (
+        <TouchableOpacity 
+            style={[managementStyles.mockItemCard, isSelected && managementStyles.mockItemCardSelected]}
+            onPress={() => onSelectItem(isSelected ? null : item.id)}
+        >
+            {/* Dish Name and Price in a CardView style */}
+            <View style={managementStyles.itemHeaderRow}>
+                <Text style={managementStyles.itemCourseName}>{item.name.replace(' (EN)', '').replace(' (GR)', '')}</Text>
+                <Text style={managementStyles.itemPriceName}>{item.price}</Text>
+            </View>
+
+            <View style={managementStyles.itemContentRow}>
+                <View style={managementStyles.itemImagePlaceholder}>
+                    <Text style={managementStyles.itemImageText}>🍛</Text>
+                </View>
+                <View style={managementStyles.itemDetails}>
+                    <Text style={managementStyles.itemDescription} numberOfLines={3} ellipsizeMode="tail">
+                        {item.description.replace(' (EN)', '').replace(' (GR)', '')}
+                    </Text>
+                    <Text style={managementStyles.itemCoursePill}>{item.course}</Text>
+                </View>
+            </View>
+            
+            {/* Action buttons */}
+            {isSelected && (
+                <View style={managementStyles.actionButtons}>
+                    <TouchableOpacity style={managementStyles.saveButton} 
+                        onPress={() => Alert.alert('Save Item', `Pretend this saved changes to ${item.name}`)}>
+                        <Text style={managementStyles.saveButtonText}>SAVE</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={managementStyles.deleteButton} 
+                        onPress={() => onDeleteItem(item.id)}>
+                        <Text style={managementStyles.deleteButtonText}>DELETE</Text>
+                    </TouchableOpacity>
+                </View>
+            )}
+        </TouchableOpacity>
+    );
+  };
+
+  return (
+    <View style={managementStyles.screen}>
+    
+
+      {/* translates to welscome chef Christoffel */}
+      <View style={managementStyles.titleSection}>
+        <Text style={managementStyles.appName}>Kalosirisate</Text>
+        <Text style={managementStyles.appSubName}>Sef Christofel</Text>
+        
+        <Image source={{ uri: EXPO_SNACK_LOGO_URI }} style={managementStyles.logoImage} />
+      </View>
+      
+      {/* Search Bar*/}
+      <View style={managementStyles.searchBarContainer}>
+        <Text style={managementStyles.searchIcon}>🔍</Text>
+        <TextInput
+            style={managementStyles.searchInput}
+            placeholder="Search Item"
+            placeholderTextColor={COLORS.TEXT_GRAY}
+        />
+      </View>
+      <View style={managementStyles.searchResultsContainer}>
+          <Text style={managementStyles.searchResultsText}>Search Results</Text>
+      </View>
+      
+      <View style={managementStyles.addItemContainer}>
+        <Text style={managementStyles.addItemText}>Add Menu Item</Text>
+        <TouchableOpacity style={managementStyles.addButton} onPress={onOpenModal}>
+            <Text style={managementStyles.addButtonText}>+</Text>
+        </TouchableOpacity>
+      </View>
+      
+      {/* List for items to be managed */}
+      <View style={managementStyles.listContainer}>
+        {managedItems.length === 0 ? (
+          <View style={managementStyles.emptyList}>
+            <Text style={managementStyles.emptyText}>
+              Add new dishes/items.
+            </Text>
+          </View>
+        ) : (
+          <FlatList
+            data={managedItems}
+            renderItem={({ item }) => <RenderManagedItem item={item} />}
+            keyExtractor={(item) => item.id}
+            showsVerticalScrollIndicator={false}
+          />
+        )}
+      </View>
+      
+      {/* clear all*/}
+      <TouchableOpacity style={managementStyles.clearAllButton} onPress={onClearAll}>
+          <Text style={managementStyles.clearAllButtonText}>CLEAR ALL</Text>
+      </TouchableOpacity>
+    </View>
+  );
+};
+
+// Main App 
+const App = () => {
+  const [homeMenuItems, setHomeMenuItems] = useState<MenuItem[]>([]);
+  const [managedItems, setManagedItems] = useState<MenuItem[]>([]); 
+  const [isModalVisible, setIsModalVisible] = useState(false);
+  const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
+
+  const handleAddItem = (newItem: Omit<MenuItem, 'id'>) => {
+    const newItemWithId: MenuItem = {
+      ...newItem,
+      id: Date.now().toString(),
+    };
+    
+    setHomeMenuItems(prevItems => [newItemWithId, ...prevItems]);
+    setManagedItems(prevItems => [newItemWithId, ...prevItems]);
+  };
+
+  const handleDeleteItem = (itemId: string) => {
+    setManagedItems(prev => prev.filter(item => item.id !== itemId));
+    setHomeMenuItems(prev => prev.filter(item => item.id !== itemId));
+    setSelectedItemId(null);
+  };
+
+  const handleClearAll = () => {
+    Alert.alert(
+        "Confirm Clear All",
+        "Are you sure you want to clear all addeditems? This can not be retrieved",
+        [
+            {text: "Cancel", style: "cancel"},
+            {text: "Clear All", style: 'destructive', onPress: () => {
+                setHomeMenuItems([]);
+                setManagedItems([]);
+                setSelectedItemId(null);
+            }}
+        ]
+    );
+  };
+  
+
+  return (
+    <SafeAreaView style={styles.appContainer}>
+      <ScrollView 
+        style={styles.fullScroll} 
+        showsVerticalScrollIndicator={false}
+      >
+        <HomeScreen menuItems={homeMenuItems} />
+
+        <View style={styles.divider} />
+
+        <MenuManagementScreen 
+            onOpenModal={() => setIsModalVisible(true)}
+            managedItems={managedItems}
+            selectedItemId={selectedItemId}
+            onSelectItem={setSelectedItemId}
+            onDeleteItem={handleDeleteItem}
+            onClearAll={handleClearAll}
+        />
+        
+      </ScrollView>
+      
+      <AddItemModal
+        isVisible={isModalVisible}
+        onClose={() => setIsModalVisible(false)}
+        onSave={handleAddItem}
+        courses={COURSES}
+      />
+    </SafeAreaView>
+  );
+};
+
+// stylesheet 
 
 const styles = StyleSheet.create({
-  container: {
+  appContainer: {
     flex: 1,
     backgroundColor: COLORS.APP_BACKGROUND,
   },
-
-  // --- Home Screen Styles ---
-  homeScreen: {
-    flex: 1.5,
-    paddingHorizontal: 20,
-    paddingTop: 50,
+  fullScroll: {
+    flex: 1,
+    paddingBottom: 20, 
   },
-  translatorIcon: {
-    position: 'absolute',
-    top: 40,
-    left: 10,
-    zIndex: 10,
-    padding: 10,
+  divider: {
+    height: 3, 
+    backgroundColor: COLORS.DIVIDER_BLACK,
+    width: '100%',
   },
-  translatorDropdown: {
-    position: 'absolute',
-    top: 75,
-    left: 10,
-    backgroundColor: COLORS.MODAL_BAR_BG,
-    borderRadius: 5,
-    padding: 5,
-    zIndex: 20,
+});
+const commonStyles = StyleSheet.create({
+  screen: {
+    width: '100%',
+    paddingHorizontal: 15,
+    paddingTop: 5,
+    backgroundColor: COLORS.APP_BACKGROUND,
   },
-  translatorText: {
-    color: COLORS.TEXT_LIGHT,
-    fontSize: 14,
-    paddingVertical: 3,
-    paddingHorizontal: 5,
-  },
-  header: {
+  titleSection: {
     alignItems: 'center',
-    marginBottom: 10,
-    marginTop: 10,
+    paddingVertical: 10,
+    position: 'relative',
+    marginBottom: 5,
   },
-  appName1: {
-    color: COLORS.TEXT_LIGHT,
-    fontSize: 28,
+  logoImage: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    position: 'absolute',
+    right: 15,
+    top: 5,
+    borderWidth: 1,
+    borderColor: COLORS.TEXT_ACCENT,
+  },
+  appName: {
+    fontSize: 26,
+    fontWeight: 'bold',
+    color: COLORS.HOME_HEADER_TITLE,
     fontStyle: 'italic',
   },
-  appTitleRow: {
-    flexDirection: 'row',
+  appSubName: {
+    fontSize: 18,
+    color: COLORS.HOME_HEADER_TITLE,
+    fontStyle: 'italic',
+  },
+  listContainer: {
+    minHeight: 200, 
+    backgroundColor: COLORS.APP_BACKGROUND, 
+    borderRadius: 8,
+    padding: 5,
+    marginVertical: 10,
+    flexGrow: 1, 
+  },
+  itemImagePlaceholder: {
+    width: '100%',
+    height: 100, 
+    borderRadius: 8,
+    backgroundColor: COLORS.ITEM_IMAGE_PLACEHOLDER,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 5,
+  },
+  itemImageText: {
+    fontSize: 30,
+    color: COLORS.TEXT_LIGHT,
+  },
+  itemName: {
+    color: COLORS.TEXT_LIGHT,
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginTop: 5,
+  },
+  itemDescription: {
+    color: COLORS.TEXT_GRAY,
+    fontSize: 12,
+    marginTop: 2,
+  },
+  itemPrice: {
+    color: COLORS.TEXT_ACCENT,
+    fontSize: 14,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+});
+
+const homeStyles = StyleSheet.create({
+  ...commonStyles,
+  titleSection: {
+      ...commonStyles.titleSection,
+      flexDirection: 'row', // Align logo, name, and pill horizontally
+      justifyContent: 'center',
+      alignItems: 'center',
+  },
+  appNameContainer: {
+    flex: 1,
     alignItems: 'center',
   },
-  appName2: {
-    color: COLORS.TEXT_LIGHT,
-    fontSize: 32,
+  translatorPill: {
+    backgroundColor: COLORS.COURSE_PILL_BG,
+    borderRadius: 5,
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    borderWidth: 1,
+    borderColor: COLORS.COURSE_PILL_BORDER,
+    position: 'absolute',
+    left: 15,
+    top: 18,
+    zIndex: 10,
+  },
+  translatorPillText: {
+    color: COLORS.TEXT_ACCENT,
     fontWeight: 'bold',
-    marginRight: 10,
+    fontSize: 14,
   },
-  logo: {
-    width: 30,
-    height: 30,
-    resizeMode: 'contain',
+  header: {
+    // Removed unused header styles, translator is now in titleSection
+    height: 1, 
   },
-  courseScrollView: {
-    maxHeight: 50,
-    marginBottom: 10,
+  decoyScrollView: {
+    maxHeight: 60,
+    marginVertical: 10,
   },
-  courseScrollViewContent: {
+  decoyScrollViewContent: {
     alignItems: 'center',
     paddingHorizontal: 5,
   },
   coursePill: {
-    backgroundColor: COLORS.SCROLL_FLATLIST_BG,
+    backgroundColor: COLORS.COURSE_PILL_BG,
     borderRadius: 8,
     paddingVertical: 5,
-    paddingHorizontal: 12,
-    marginRight: 10,
-    flexDirection: 'row',
+    paddingHorizontal: 10,
+    marginHorizontal: 5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 80,
+    borderWidth: 1,
+    borderColor: COLORS.COURSE_PILL_BORDER,
   },
   courseName: {
     color: COLORS.TEXT_LIGHT,
     fontWeight: 'bold',
-    fontSize: 13,
+    fontSize: 14,
   },
   coursePrice: {
-    color: COLORS.TEXT_MUTED,
-    fontSize: 13,
-    marginLeft: 5,
+    color: COLORS.TEXT_ACCENT,
+    fontSize: 12,
   },
-  homeFlatList: {
-    flex: 1,
-    backgroundColor: COLORS.SCROLL_FLATLIST_BG,
-    borderRadius: 8,
+  
+  courseSectionContainer: {
+      marginBottom: 20,
+      paddingHorizontal: 5,
+  },
+  courseSectionTitle: {
+      fontSize: 24,
+      fontWeight: 'bold',
+      color: COLORS.TEXT_ACCENT,
+      marginBottom: 10,
+      textAlign: 'center',
+  },
+  row: {
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+  menuItemWrapper: {
+    width: '48%', 
+    backgroundColor: COLORS.LIST_BACKGROUND,
+    borderRadius: 10,
     padding: 10,
     marginBottom: 10,
   },
-  homeMenuItem: {
-    marginBottom: 15,
-  },
-  homeItemRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-  },
-  homeItemImage: {
-    width: 80,
-    height: 80,
-    borderRadius: 5,
-    marginRight: 10,
-    backgroundColor: '#304048',
-  },
-  homeItemText: {
-    flex: 1,
-  },
-  homeItemName: {
-    color: COLORS.TEXT_LIGHT,
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  homeItemDescription: {
-    color: COLORS.TEXT_MUTED,
-    fontSize: 12,
-    marginTop: 4,
-  },
-  totalItemsText: {
-    color: COLORS.TEXT_LIGHT,
-    fontSize: 14,
-    textAlign: 'center',
-    paddingVertical: 5,
-    borderTopWidth: 1,
-    borderTopColor: '#253540',
-  },
-
-  // --- Horizontal Divider ---
-  divider: {
-    height: 2,
-    backgroundColor: COLORS.DIVIDER_LINE,
-  },
-
-  // --- Menu Management Styles ---
-  menuManagementScreen: {
-    flex: 1.5,
-    padding: 20,
-    paddingTop: 10,
-  },
-  managementTitle: {
-    color: COLORS.TEXT_LIGHT,
-    fontSize: 20,
-    fontWeight: 'bold',
-    textAlign: 'center',
-    marginBottom: 15,
-  },
-  disabledSearchBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: COLORS.SCROLL_FLATLIST_BG,
-    borderRadius: 5,
-    padding: 12,
-    marginBottom: 15,
-    opacity: 0.5,
-  },
-  disabledSearchText: {
-    color: COLORS.TEXT_MUTED,
-    marginLeft: 10,
-  },
-  addNewItemButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: COLORS.SCROLL_FLATLIST_BG,
-    borderRadius: 5,
-    padding: 15,
-    marginBottom: 15,
-  },
-  addNewItemText: {
-    color: COLORS.TEXT_LIGHT,
-    fontWeight: 'bold',
-    fontSize: 16,
-  },
-  menuFlatList: {
-    flex: 1,
-    backgroundColor: COLORS.SCROLL_FLATLIST_BG,
-    borderRadius: 8,
-    padding: 10,
-  },
-  menuItemCard: {
-    backgroundColor: COLORS.SELECTED_CARD, 
-    borderRadius: 8,
-    padding: 15,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: 'transparent',
-  },
-  selectedCard: {
-    borderColor: COLORS.BUTTON_RED,
-    borderWidth: 2,
-  },
-  cardContent: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 5,
-  },
-  cardTitle: {
-    color: COLORS.TEXT_LIGHT,
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  cardPrice: {
-    fontSize: 16,
-    fontWeight: 'normal',
-    color: COLORS.TEXT_MUTED,
-  },
-  cardDescription: {
-    color: COLORS.TEXT_MUTED,
-    fontSize: 12,
-    marginTop: 5,
-    width: width * 0.5,
-  },
-  cardImage: {
-    width: 60,
-    height: 60,
-    borderRadius: 5,
-    resizeMode: 'contain',
-    backgroundColor: '#304048',
-  },
-  actionButtonsContainer: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    borderTopWidth: 1,
-    borderTopColor: '#253540',
-    paddingTop: 10,
-    marginTop: 10,
-  },
-  saveButton: {
-    backgroundColor: COLORS.BUTTON_RED,
-    paddingVertical: 8,
-    paddingHorizontal: 20,
-    borderRadius: 5,
-    marginRight: 10,
-  },
-  deleteButton: {
-    backgroundColor: COLORS.BUTTON_RED,
-    paddingVertical: 8,
-    paddingHorizontal: 20,
-    borderRadius: 5,
-  },
-  buttonText: {
-    color: COLORS.TEXT_LIGHT,
-    fontWeight: 'bold',
-    fontSize: 12,
-  },
-  clearAllButton: {
-    backgroundColor: COLORS.BUTTON_GRAY,
-    padding: 15,
-    borderRadius: 5,
-    alignItems: 'center',
-    marginTop: 15,
-  },
-  emptyListText: {
-    color: COLORS.TEXT_MUTED,
-    textAlign: 'center',
-    padding: 20,
-  },
-
-  // --- Modal (Float Screen) Styles ---
-  modalOverlay: {
+  emptyList: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(18, 32, 37, 0.9)',
+    padding: 50,
   },
-  modalContent: {
-    width: '85%',
-    backgroundColor: COLORS.APP_BACKGROUND,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: COLORS.MODAL_BAR_BG,
-    elevation: 20,
-    overflow: 'hidden',
+  emptyText: {
+    color: COLORS.TEXT_GRAY,
+    textAlign: 'center',
+    marginTop: 10,
+    fontStyle: 'italic',
   },
-  modalHeaderBar: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: COLORS.MODAL_BAR_BG,
-    padding: 15,
-  },
-  modalHeaderTitle: {
+  totalItems: {
     color: COLORS.TEXT_LIGHT,
-    fontSize: 18,
+    textAlign: 'center',
+    paddingVertical: 5,
+    backgroundColor: COLORS.LIST_BACKGROUND,
+    marginBottom: 10,
+    borderRadius: 8,
+  }
+});
+
+const managementStyles = StyleSheet.create({
+  ...commonStyles,
+  // Removed screenTitle style
+  
+  searchBarContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: COLORS.LIST_BACKGROUND,
+      borderRadius: 8,
+      paddingHorizontal: 15,
+      marginVertical: 10,
+  },
+  searchIcon: {
+      color: COLORS.TEXT_ACCENT,
+      fontSize: 20,
+      marginRight: 10,
+  },
+  searchInput: {
+      flex: 1,
+      height: 45,
+      color: COLORS.TEXT_LIGHT,
+  },
+  searchResultsContainer: {
+      backgroundColor: COLORS.LIST_BACKGROUND,
+      borderRadius: 8,
+      padding: 10,
+      alignItems: 'center',
+      marginBottom: 10,
+  },
+  searchResultsText: {
+      color: COLORS.TEXT_ACCENT,
+      fontSize: 16,
+      fontWeight: 'bold',
+  },
+  
+  addItemContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 5,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.TEXT_GRAY,
+    marginVertical: 10,
+  },
+  addItemText: {
+    color: COLORS.TEXT_ACCENT,
+    fontSize: 16,
     fontWeight: 'bold',
   },
-  modalFormContainer: {
-    padding: 20,
-  },
-  modalInput: {
-    backgroundColor: COLORS.MODAL_BAR_BG,
+  addButton: {
+    backgroundColor: COLORS.APP_BACKGROUND,
+    padding: 5,
     borderRadius: 5,
+    borderWidth: 1,
+    borderColor: COLORS.TEXT_ACCENT,
+  },
+  addButtonText: {
+    color: COLORS.TEXT_ACCENT,
+    fontSize: 20,
+    fontWeight: 'bold',
+  },
+  
+  mockItemCard: {
+    padding: 10,
+    marginVertical: 5,
+    backgroundColor: COLORS.LIST_BACKGROUND,
+    borderRadius: 8,
+    position: 'relative',
+    borderWidth: 1,
+    borderColor: COLORS.LIST_BACKGROUND, 
+  },
+  mockItemCardSelected: {
+    borderWidth: 2,
+    borderColor: COLORS.BUTTON_ACCENT,
+  },
+  itemHeaderRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: 10,
+  },
+  itemCourseName: {
     color: COLORS.TEXT_LIGHT,
-    padding: 15,
-    marginBottom: 15,
-    fontSize: 16,
+    fontSize: 22,
+    fontWeight: 'bold',
   },
-  pickerContainer: {
-    marginBottom: 15,
-    paddingVertical: 10,
-    backgroundColor: COLORS.MODAL_BAR_BG,
-    borderRadius: 5,
+  itemPriceName: {
+    color: COLORS.TEXT_ACCENT,
+    fontSize: 22,
+    fontWeight: 'bold',
   },
-  pickerLabel: {
-    color: COLORS.TEXT_MUTED,
-    fontSize: 14,
-    marginBottom: 5,
-    paddingHorizontal: 15,
+  itemContentRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
   },
-  pickerButton: {
-    backgroundColor: COLORS.APP_BACKGROUND, 
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 20,
-    marginHorizontal: 5,
+  itemDetails: {
+    flex: 1,
+    paddingLeft: 10,
   },
-  pickerButtonSelected: {
-    backgroundColor: COLORS.BUTTON_RED,
+  itemCoursePill: {
+      color: COLORS.TEXT_GRAY,
+      fontSize: 12,
+      marginTop: 5,
+      alignSelf: 'flex-start',
+      backgroundColor: COLORS.COURSE_PILL_BG,
+      paddingHorizontal: 8,
+      paddingVertical: 3,
+      borderRadius: 5,
   },
-  pickerButtonText: {
-    color: COLORS.TEXT_LIGHT,
-    fontSize: 14,
+  actionButtons: {
+      flexDirection: 'row',
+      justifyContent: 'flex-start',
+      marginTop: 15,
+      paddingTop: 10,
+      borderTopWidth: 1,
+      borderTopColor: COLORS.ITEM_IMAGE_PLACEHOLDER,
   },
-  modalSaveButton: {
-    backgroundColor: COLORS.BUTTON_RED,
-    padding: 18,
+  saveButton: {
+      backgroundColor: COLORS.TEXT_ACCENT,
+      paddingHorizontal: 20,
+      paddingVertical: 10,
+      borderRadius: 5,
+      marginRight: 20,
+  },
+  saveButtonText: {
+      color: COLORS.DIVIDER_BLACK,
+      fontWeight: 'bold',
+      fontSize: 14,
+  },
+  deleteButton: {
+      backgroundColor: COLORS.ACTION_DELETE,
+      paddingHorizontal: 20,
+      paddingVertical: 10,
+      borderRadius: 5,
+  },
+  deleteButtonText: {
+      color: COLORS.TEXT_LIGHT,
+      fontWeight: 'bold',
+      fontSize: 14,
+  },
+  clearAllButton: {
+      borderWidth: 1,
+      borderColor: COLORS.TEXT_ACCENT,
+      padding: 15,
+      borderRadius: 5,
+      alignItems: 'center',
+      marginTop: 10,
+      marginBottom: 20,
+  },
+  clearAllButtonText: {
+      color: COLORS.TEXT_ACCENT,
+      fontWeight: 'bold',
+      fontSize: 16,
+  },
+  emptyList: {
+    flex: 1,
+    justifyContent: 'center',
     alignItems: 'center',
+    padding: 20,
+    minHeight: 150,
+  },
+  emptyText: {
+    color: COLORS.TEXT_GRAY,
+    textAlign: 'center',
+    marginTop: 10,
+    fontStyle: 'italic',
   },
 });
 
-// Final export for the single TSX file
-export default CombinedScreen;
+const modalStyles = StyleSheet.create({
+  centeredView: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: COLORS.MODAL_OVERLAY,
+  },
+  modalView: {
+    margin: 20,
+    backgroundColor: COLORS.MODAL_BACKGROUND,
+    borderRadius: 10,
+    padding: 25,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 5,
+    elevation: 8,
+    width: '90%',
+  },
+  modalTitle: {
+    marginBottom: 20,
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: COLORS.TEXT_LIGHT,
+  },
+  input: {
+    height: 45,
+    width: '100%',
+    borderColor: COLORS.TEXT_GRAY,
+    borderWidth: 1,
+    borderRadius: 5,
+    paddingHorizontal: 15,
+    marginBottom: 5,
+    backgroundColor: COLORS.MODAL_INPUT_BG,
+    color: COLORS.TEXT_LIGHT,
+  },
+  inputError: {
+    borderColor: COLORS.ERROR_TEXT,
+    borderWidth: 2,
+  },
+  errorText: {
+    color: COLORS.ERROR_TEXT,
+    alignSelf: 'flex-start',
+    marginLeft: 5,
+    marginBottom: 10,
+    fontSize: 12,
+  },
+  pickerContainer: {
+    width: '100%',
+    marginTop: 10,
+    marginBottom: 20,
+  },
+  pickerMock: {
+    height: 45,
+    width: '100%',
+    borderColor: COLORS.TEXT_GRAY,
+    borderWidth: 1,
+    borderRadius: 5,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 15,
+    backgroundColor: COLORS.MODAL_INPUT_BG,
+  },
+  pickerInputMock: {
+    flex: 1,
+    color: COLORS.TEXT_LIGHT,
+    fontSize: 16,
+  },
+  dropdownIcon: {
+    color: COLORS.TEXT_GRAY,
+    fontSize: 12,
+  },
+  buttonSave: {
+    backgroundColor: COLORS.TEXT_ACCENT,
+    borderRadius: 5,
+    padding: 12,
+    elevation: 2,
+    width: '100%',
+    alignItems: 'center',
+  },
+  textStyle: {
+    color: COLORS.DIVIDER_BLACK,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    fontSize: 16,
+  },
+});
+
+export default App;
