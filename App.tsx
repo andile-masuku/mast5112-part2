@@ -30,8 +30,9 @@ type MenuByCourse = {
   [course: string]: MenuItem[];
 };
 
-const LogoImage = require('./assets/icon.png');
-const AppLogo: ImageSourcePropType = { uri: LogoImage }; 
+
+ const LogoImage = require('./assets/menulogo.png');
+ const AppLogo: ImageSourcePropType = LogoImage;
 
 // colours for the app
 const Colours = {
